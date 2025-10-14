@@ -4,14 +4,24 @@
 #include <cmath>
 #include <algorithm>
 #include <string>
-#include <numbers>
 #include <complex>
 #include <chrono>
 using namespace std;
 
+
+//timing var speeds
+long long int grayscale_speed;//
+long long int fft_speed;//
+long long int gaussian_kernel_gen_speed;//
+long long int pad_speed = 0;//
+long long transpose_speed = 0;//
+long long back_convert_speed;//
+long long int ifft_speed;//
+long long int mult_speed;//
 //returns a simple grayscale image by averaging the three channels,
 //takes in the three channels, and width and height as input
 vector<unsigned char> grayscale(const vector<unsigned char>& red, const vector<unsigned char>& green, const vector<unsigned char>& blue, int width, int height){
+    auto start_time = chrono::high_resolution_clock::now();
     size_t dimension = width * height;
     vector<unsigned char> output(dimension);
     for(size_t i = 0; i<dimension; ++i){
@@ -19,6 +29,9 @@ vector<unsigned char> grayscale(const vector<unsigned char>& red, const vector<u
         output[i] = static_cast<unsigned char>(min(average, 255));
     }
     cout << "Finished Grayscale Conversion" << endl;
+    auto end_time = chrono::high_resolution_clock::now();
+    auto duration = chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    grayscale_speed = duration.count();
     return output;
 }
 
@@ -40,7 +53,7 @@ vector<complex<double>> fft(const vector<complex<double>>& matrix) {
     vector<complex<double>> y(n);
     //Using a running product is much faster than calling pow() in a loop.
     complex<double> omega(1.0, 0.0);
-    complex<double> omega_n = polar(1.0, -2.0 * M_PI / n); 
+    complex<double> omega_n = polar(1.0, -2.0 * 3.14 / n); 
 
     for (size_t j = 0; j < n / 2; ++j) {
         complex<double> t = omega * o_out[j];
@@ -69,7 +82,7 @@ vector<complex<double>> ifft(const vector<complex<double>>& matrix) {
     vector<complex<double>> y(n);
     complex<double> omega(1.0, 0.0);
     //The angle is now positive, and the incorrect division by N is removed.
-    complex<double> omega_n = polar(1.0, 2.0 * M_PI / n);
+    complex<double> omega_n = polar(1.0, 2.0 * 3.14 / n);
 
     for (size_t j = 0; j < n / 2; ++j) {
         complex<double> t = omega * o_out[j];
@@ -88,6 +101,7 @@ int power_of_two(int n){
 //Then it converts the mat into a complex number vector for use in fft;
 vector<complex<double>> prepare_matrix(const vector<double>& og_mat, int og_width, int og_height, int padded_height, int padded_width){
     //init a zero matrix
+    auto start_time = chrono::high_resolution_clock::now();
     vector<double> mat(padded_width*padded_height, 0);
     //fill up the top left of the matrix with the values
     for(int y = 0; y<og_height; ++y){
@@ -97,12 +111,16 @@ vector<complex<double>> prepare_matrix(const vector<double>& og_mat, int og_widt
     }
     vector<complex<double>> out(mat.begin(), mat.end());
     cout << "Padded Matrix" << endl;
+    auto end_time = chrono::high_resolution_clock::now();
+    auto duration = chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    pad_speed += duration.count();
     return out;
 }
 //takes in a width and height, which will be the size of the original matrix, and a standard deviation to determine blur amount
 vector<double> generate_gaussian_function(int width, int height, double std_dev){
     //generates a gaussian kernel centered at 0,0 - the top left of the image
     //This causes the bell curve to wrap around all four corners and prepares it for fft use
+    auto start_time = chrono::high_resolution_clock::now();
     vector<double> kernel(width*height);
     double sum = 0.0;
     for(int y = 0; y<height; ++y){
@@ -119,35 +137,47 @@ vector<double> generate_gaussian_function(int width, int height, double std_dev)
         kernel[i]/= sum;
     }
     cout << "Kernel Generated" << endl;
+    auto end_time = chrono::high_resolution_clock::now();
+    auto duration = chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    gaussian_kernel_gen_speed = duration.count();
     return kernel;
 
 }
 //Converts double vector to unsigned vector safely
 //takes in the complex double image_matrix, original width and height
 vector<unsigned char> back_convert(const vector<complex<double>>& mat, int height, int width, int padded_width){
+    auto start_time = chrono::high_resolution_clock::now();
     vector<unsigned char> output;
     output.reserve(height*width);//reserve memory for output with needing to reallocate
     for(int y = 0; y < height; ++y){
         for(int x = 0; x< width; ++x){
             double real = mat[y*padded_width + x].real();
-            unsigned char clamped = static_cast<unsigned char>(clamp(round(real), 0.0, 255.0));
+            unsigned char clamped = static_cast<unsigned char>(max(0.0, min(255.0, round(real))));
             output.push_back(clamped);
         }
     }
     cout << "Converted back to real" << endl;
+    auto end_time = chrono::high_resolution_clock::now();
+    auto duration = chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    back_convert_speed = duration.count();
     return output;
 }
 //Complex element multiplication - takes in two complex double vectors and returns on
 vector<complex<double>> element_mult(const vector<complex<double>>& mat, const vector<complex<double>>& kernel){
+    auto start_time = chrono::high_resolution_clock::now();
     size_t matsize = mat.size();
     vector<complex<double>> out(matsize);
     for(int i = 0; i<matsize; ++i){
         out[i] = mat[i] * kernel[i];
     }
+    auto end_time = chrono::high_resolution_clock::now();
+    auto duration = chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    mult_speed = duration.count();
     return out;
 }
 // Helper function to transpose a matrix
 void transpose(vector<complex<double>>& matrix, int width, int height) {
+    auto start_time = chrono::high_resolution_clock::now();
     vector<complex<double>> temp(width * height);
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
@@ -155,10 +185,14 @@ void transpose(vector<complex<double>>& matrix, int width, int height) {
         }
     }
     matrix = temp;
+    auto end_time = chrono::high_resolution_clock::now();
+    auto duration = chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    transpose_speed += duration.count();
 }
 
 //2D FFT function
 vector<complex<double>> fft2d(vector<complex<double>>& matrix, int width, int height) {
+    auto start_time = chrono::high_resolution_clock::now();
     //FFT on all rows
     for (int y = 0; y < height; ++y) {
         vector<complex<double>> row(matrix.begin() + y * width, matrix.begin() + (y + 1) * width);
@@ -178,11 +212,15 @@ vector<complex<double>> fft2d(vector<complex<double>>& matrix, int width, int he
 
     //Transpose back to original orientation
     transpose(matrix, height, width);
+    auto end_time = chrono::high_resolution_clock::now();
+    auto duration = chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    fft_speed = duration.count();
     return matrix;
 }
 
 //2D IFFT function
 vector<complex<double>> ifft2d(vector<complex<double>>& matrix, int width, int height) {
+    auto start_time = chrono::high_resolution_clock::now();
     //IFFT on all rows
     for (int y = 0; y < height; ++y) {
         vector<complex<double>> row(matrix.begin() + y * width, matrix.begin() + (y + 1) * width);
@@ -208,13 +246,17 @@ vector<complex<double>> ifft2d(vector<complex<double>>& matrix, int width, int h
     for (auto& val : matrix) {
         val /= total_pixels;
     }
-
+    auto end_time = chrono::high_resolution_clock::now();
+    auto duration = chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    ifft_speed = duration.count();
     return matrix;
 }
 
 //Convolution
 //takes in an original grayscale matrix, its dimensions, and a standard deviation for the gaussian filter
-vector<unsigned char> gaussian_convolve(const vector<unsigned char>& og_mat,int width, int height, double std_dev){
+vector<unsigned char> gaussian_convolve(const vector<unsigned char>& red, const vector<unsigned char>& green, const vector<unsigned char>& blue, int width, int height, double std_dev){
+    auto start_time = chrono::high_resolution_clock::now();   
+    vector<unsigned char> og_mat = grayscale(red, green, blue, width, height); 
     //typecast to double vec
     vector<double> image_matrix(og_mat.begin(), og_mat.end());
     //get padded dimensions
@@ -234,65 +276,19 @@ vector<unsigned char> gaussian_convolve(const vector<unsigned char>& og_mat,int 
     ifft2d(combined, padded_w, padded_h);
     cout << "Inverse 2D FFT completed" << endl;
     //convert and return output
-    return back_convert(combined, height, width, padded_w);
-}
-//Sobel Operator
-vector<unsigned char> sobel_convolve(const vector<unsigned char>& red, const vector<unsigned char>& green, const vector<unsigned char>& blue,int width, int height, double std_dev){
-    auto start_time = chrono::high_resolution_clock::now();    
-    //Get grayscale mat
-    vector<unsigned char> grayscale_mat = grayscale(red, green, blue, width, height);
-    vector<unsigned char> blurred_mat = gaussian_convolve(grayscale_mat, width, height, std_dev);
-    // Sobel kernels
-    const int Gx[3][3] = {{-1, 0, 1}, {-2, 0, 2}, {-1, 0, 1}};
-    const int Gy[3][3] = {{-1, -2, -1}, {0, 0, 0}, {1, 2, 1}};
+    vector <unsigned char> final_image = back_convert(combined, height, width, padded_w);
 
-    vector<int> gx_result(width * height);
-    vector<int> gy_result(width * height);
-
-    //Convolve
-    // Iterate over each pixel, skipping the 1-pixel border
-    for (int y = 1; y < height - 1; ++y) {
-        for (int x = 1; x < width - 1; ++x) {
-            int sum_x = 0;
-            int sum_y = 0;
-            // Apply the 3x3 kernel
-            for (int ky = -1; ky <= 1; ++ky) {
-                for (int kx = -1; kx <= 1; ++kx) {
-                    int pixel_val = blurred_mat[(y + ky) * width + (x + kx)];
-                    sum_x += pixel_val * Gx[ky + 1][kx + 1];
-                    sum_y += pixel_val * Gy[ky + 1][kx + 1];
-                }
-            }
-            gx_result[y * width + x] = sum_x;
-            gy_result[y * width + x] = sum_y;
-        }
-    }
-
-    //Calculate Magnitude and Normalize
-    vector<unsigned char> final_image(width * height);
-    double max_magnitude = 0;
-    vector<double> magnitude_result(width * height);
-
-    // First pass to calculate magnitudes and find the max
-    for (int i = 0; i < width * height; ++i) {
-        double mag = sqrt(pow(gx_result[i], 2) + pow(gy_result[i], 2));
-        magnitude_result[i] = mag;
-        if (mag > max_magnitude) {
-            max_magnitude = mag;
-        }
-    }
-    
-    // Second pass to normalize
-    for (int i = 0; i < width * height; ++i) {
-        if (max_magnitude > 0) { // Avoid division by zero
-            final_image[i] = static_cast<unsigned char>(round((magnitude_result[i] / max_magnitude) * 255.0));
-        } else {
-            final_image[i] = 0;
-        }
-    }
     auto end_time = chrono::high_resolution_clock::now();
     auto duration = chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    cout << "Timing Breakdown----------------------------" << endl;
     cout << "Function runtime: " << duration.count() << " microseconds" << endl;
+    cout << "Grayscale Time: " << grayscale_speed << " microseconds" << endl;
+    cout << "Gaussian Kernel Generation Time: " << gaussian_kernel_gen_speed << " microseconds" << endl;
+    cout << "Padding Time: " << pad_speed << " microseconds" << endl;
+    cout << "FFT Time: " << fft_speed << " microseconds" << endl;
+    cout << "Transpose Time: " << transpose_speed << " microseconds" << endl;
+    cout << "Element-wise Multiplication Time: " << mult_speed << " microseconds" << endl;
+    cout << "IFFT Time: " << ifft_speed << " microseconds" << endl;
+    cout << "Back Conversion Time: " << back_convert_speed << " microseconds" << endl;
     return final_image;
 }
-
