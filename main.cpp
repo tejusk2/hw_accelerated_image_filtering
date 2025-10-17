@@ -55,7 +55,7 @@ int main(int argc, char** argv){
         stbi_image_free(data); //frees allocated image memory
 
         auto t0 = chrono::high_resolution_clock::now();
-        vector<unsigned char> output = gaussian_convolve(r,g,b, width, height, 1.4);
+        vector<unsigned char> output = gaussian_convolve(r,g,b, width, height, 6);
         auto t1 = chrono::high_resolution_clock::now();
         auto ms = chrono::duration_cast<chrono::milliseconds>(t1 - t0).count();
 
@@ -69,4 +69,3 @@ int main(int argc, char** argv){
     return 0;
     
 }
-
